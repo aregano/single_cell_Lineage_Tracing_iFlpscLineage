@@ -1,0 +1,800 @@
+---
+title: "GEA_Founders_Analysis"
+author: "Alvaro Regano"
+date: "27/07/2023"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+
+knitr::opts_chunk$set(
+  echo = TRUE, out.width = "200%", fig.align = "center",fig.width = 16,fig.height = 7,
+  message = FALSE, warning = FALSE
+)
+#knitr::opts_knit$set(root.dir= normalizePath('..'))
+#knitr::opts_chunk$set(error = FALSE)
+options(width = 9000)
+
+```
+
+```{r library, echo=FALSE}
+library(Seurat)
+library(ggplot2)
+library("dplyr")
+library("knitr")
+library("rmarkdown")
+library("yaml")
+library("patchwork")
+library("tidyr")
+library(RColorBrewer)
+library(cowplot)
+```
+
+```{r setup data and colors, fig.asp=0.8, echo=FALSE}
+
+GEA_Founders <- readRDS("../rds/GEA_Founders_old.rds")
+
+Bestholtz_palette <- c("#DEDAD6", "#DEDAD6", "#DEDAD6","#FEE392", "#FEC44E", "#FE9929", "#ED6F11", "#CC4C17", "#993411", "#65260C")
+
+ggplotColours <- function(n = 6, h = c(0, 360) + 15){
+  if ((diff(h) %% 360) < 1) h[2] <- h[2] - 360/n
+  hcl(h = (seq(h[1], h[2], length = n)), c = 100, l = 65)
+}
+
+```
+
+# GEA Founders Analysis
+
+# Objective
+
+Take a look at the new GEA line and conclude that it is an improvement on the last by checking for higher expression of iFlpscLineage BCs in the new founder as well as a higher number of cells expressing the transgene
+
+# Analysis
+
+The dataset conditions is as follows
+
+```{r table Conditions, fig.asp=0.8, echo=FALSE}
+
+my_table_data <- data.frame(
+  Founder = c("GEA12", "GEA12", "GEA18", "GEA3", "GEA27"),
+  Recomb = c("FULL", "NONE", "FULL", "NONE", "NONE"),
+  Promoter = c("Super", "Super", "R26", "R26", "R26"),
+  Origin = c("GEA3", "GEA3","GEA3","GEA3","GEA2"),
+  CMO = c(301,302,303,304,305)
+)
+
+my_table_data
+
+
+```
+
+```{r rename Conditions, fig.asp=0.8, echo=FALSE}
+
+table(GEA_Founders@meta.data$Condition)
+
+GEA_Founders <- subset(GEA_Founders, subset = Condition == "GEA12_NO_recomb_iFlpscL", invert = T)
+
+GEA_Founders@meta.data$Condition <- droplevels(GEA_Founders@meta.data$Condition)
+
+Idents(GEA_Founders) <- "Condition"
+
+GEA_Founders <- RenameIdents(object = GEA_Founders,
+"GEA12_FULL_recomb_iFlpscL" = "GEA3 R26-Super REcomb",
+"GEA18_FULL_recomb_iFlpscL" = "GEA3 R26-Std REcomb",
+"GEA3_NO_recomb_iFlpscL" = "GEA3 R26-Std Unrecomb",
+"GEA27_NO_recomb_iFlpscL" = "GEA2 R26-Std Unrecomb")
+
+GEA_Founders@meta.data$Condition <- GEA_Founders@active.ident
+
+```
+
+## Module Scores of the iFlpscLineage cassette
+
+First We will look at the Barcodes grouped to see how the expression rates change
+
+
+```{r module scores, fig.height= 10, fig.width=40, echo=FALSE}
+
+modules <- c("Array_1", "Array_2", "Array_3", "iFlpscLineage_4")
+
+modules <- as.data.frame(modules)
+
+#  Script
+
+myplots <- vector('list', nrow(modules))
+
+for (i in 1:nrow(modules)) {
+  p21 <- FeaturePlot(GEA_Founders, pt.size = 1, features = modules[i, 1], order = T, combine = F, slot = "data",
+  )
+  p21 <- lapply(X = p21, FUN = function(p) p + theme(plot.title = element_text(size = 30))+ scale_colour_gradientn(colors = Bestholtz_palette))
+  p22 <- Reduce( `+`, p21 )+patchwork::plot_layout( ncol = 1 )
+  myplots[[i]] <- local({
+    i <- i
+    p22
+  })
+}
+
+p20 <- patchwork::wrap_plots(myplots, ncol = 4)
+
+cairo_pdf("../Plots/QC/FeaturePlot_Module_Scores_iFlpscLineage.pdf",  width = 24, height = 6, family = "Arial")
+p20
+dev.off()
+
+
+jpeg("../Plots/QC/FeaturePlot_Module_Scores_iFlpscLineage.jpeg",  width = 24, height = 6, res = 400, unit = "in")
+p20
+dev.off()
+
+```
+
+Violin Plots show that GEA12 with Full recombination has a remarkable level of expression of all iFlpscLineage Arrays
+
+```{r UMAPwoInt3, fig.height= 10, fig.width=40, echo=FALSE}
+
+clone_palette_yfp_tom <- c(brewer.pal(name = "Paired", n = 10))
+clone_palette <- clone_palette_yfp_tom[c(2,4,6,8,10)]
+
+p20 <- VlnPlot(GEA_Founders, features = c("Array_1", "Array_2", "Array_3", "iFlpscLineage_4"), cols = clone_palette, group.by = "Condition", ncol = 4)+theme(axis.title.x.bottom = element_blank())
+
+# cairo_pdf("../Plots/QC/VlnPlot_Module_Scores_iFlpscLineage.pdf",  width = 16, height = 6, family = "Arial")
+# p20
+# dev.off()
+
+
+# Violin Plot
+
+modules <- c("Array_1", "Array_2", "Array_3", "iFlpscLineage_4")
+
+modules <- as.data.frame(modules)
+
+myplots <- vector('list', nrow(modules))
+
+for (i in 1:nrow(modules)) {
+
+
+p20 <- VlnPlot(GEA_Founders, features = modules[i, 1], group.by = "Condition", cols = clone_palette, alpha = 0.25)+
+  theme(axis.title.x.bottom = element_blank(), axis.text.x.bottom = element_blank(),axis.ticks.x.bottom = element_blank(),
+        plot.title = element_text(size = 30))+NoLegend()
+
+ myplots[[i]] <- local({
+  i <- i
+  p20
+})
+
+}
+
+
+myplots[[1]]
+
+plegend <- VlnPlot(GEA_Founders, features = modules[i, 1], group.by = "Condition", cols = clone_palette, alpha = 0.25) 
+plegend
+legend <- get_legend(plegend+theme(legend.text = element_text(size = 24)))
+
+p25 <- patchwork::wrap_plots(myplots, ncol = 4)
+
+legend
+
+p26 <- plot_grid(p25, legend, ncol = 2, rel_widths = c(1, .33))
+p26
+x.axis <- ggdraw() + draw_label("Expression Level", fontface='bold', angle = 90, size = 24)
+
+p27 <- plot_grid(x.axis, p26, ncol = 2, rel_widths = c(.015, 1))
+
+p27
+
+
+cairo_pdf("../Plots/QC/VlnPlot_Module_Scores_iFlpscLineage.pdf",  width = 20, height = 6, family = "Arial")
+p27
+dev.off()
+
+jpeg("../Plots/QC/VlnPlot_Module_Scores_iFlpscLineage.jpeg", width = 20, height = 6, units = 'in', res = 800)
+p27
+dev.off()
+
+```
+
+We can also look at the % of cells expressing iFlpscLineage in the dataset
+
+
+```{r FRT_BC, fig.asp=0.8, echo=FALSE}
+
+GEA_Founders <- PercentageFeatureSet(GEA_Founders, "*-BC*", col.name = "FRT_BCs")
+
+GEA_Founders <- PercentageFeatureSet(GEA_Founders, "^A1-BC", col.name = "A1_FRT_BCs")
+GEA_Founders <- PercentageFeatureSet(GEA_Founders, "^A2-BC", col.name = "A2_FRT_BCs")
+GEA_Founders <- PercentageFeatureSet(GEA_Founders, "^A3-BC", col.name = "A3_FRT_BCs")
+
+```
+
+
+
+```{r Barplots, fig.height= 10, fig.width=30, echo=FALSE}
+
+percentage_FRT_BC <- GEA_Founders@meta.data[c("Condition","FRT_BCs")]
+
+percentage_FRT_BC$Expression_FRT_BC <- "No"
+
+for (i in 1:nrow(percentage_FRT_BC)){
+  if (percentage_FRT_BC$FRT_BCs[i] > 0){
+    percentage_FRT_BC$Expression_FRT_BC[i] <- "Yes"
+  }
+    
+}
+
+# Calculate the percentages within each category
+percentage_data_FRT_BC <- percentage_FRT_BC %>%
+  group_by(Condition) %>%
+  summarise(Yes = sum(Expression_FRT_BC == "Yes") / n(),
+            No = sum(Expression_FRT_BC == "No") / n())
+
+# Convert the data to long format for ggplot
+percentage_data_FRT_BC_long <- pivot_longer(percentage_data_FRT_BC, cols = c(Yes, No), names_to = "Pct_Expression")
+
+```
+
+## Looking at Expression rates of iFlpscLinage per cell
+
+
+```{r UMAPCondSeuratInt, fig.height= 10, fig.width=20, echo=FALSE}
+
+bar_plot <- ggplot(data = percentage_FRT_BC, aes(x = Condition, fill = Expression_FRT_BC))
+
+bar_plot <- bar_plot + geom_bar()
+
+bar_plot_a <- bar_plot +
+  labs(title = "Rates of detectable expr iFlpscLineage",
+       x = "Condition",
+       y = "# Cells") +
+  scale_fill_manual(values = c("Yes" = "green", "No" = "red")) +
+  theme_classic()+ theme(title = element_text(size = 19, hjust = 0.5),
+                         axis.title.y = element_text(size = 22),
+                         axis.title.x = element_blank(),
+                         axis.text.y = element_text(size = 18),  axis.text.x.bottom = element_text(angle = 60, vjust = 1, hjust = 1, size = 19))
+
+# In % rates of expression
+
+bar_plot <- ggplot(data = percentage_data_FRT_BC_long, aes(x = Condition, y = value, fill = Pct_Expression))
+
+bar_plot <- bar_plot + geom_bar(stat = "identity")
+
+bar_plot_b <- bar_plot +
+  labs(title = "% of detectable expr iFlpscLineage",
+       x = "Condition",
+       y = "% Cells") +
+  scale_fill_manual(values = c("Yes" = "green", "No" = "red")) +
+  theme_classic()+ theme(title = element_text(size = 24, hjust = 0.5), axis.text.y = element_text(size = 18),
+                         axis.title.y = element_text(size = 22),
+                         axis.title.x = element_blank(),
+                         axis.text.x.bottom = element_text(angle = 60, vjust = 1, hjust = 1, size = 19))
+
+# cairo_pdf("../Plots/QC/Barplot_Rates_of_expression_iFlpscLineage.pdf",  width = 8, height = 10, family = "Arial")
+bar_plot_a
+# dev.off()
+
+# cairo_pdf("../Plots/QC/Barplot_Pct_of_expression_iFlpscLineage.pdf",  width = 8, height = 10, family = "Arial")
+bar_plot_b
+# dev.off()
+```
+
+Now in terms of % of counts in the dataset
+
+```{r barplot counts, fig.height=7, fig.width=5,echo=FALSE}
+
+box_plot <- ggplot(data = percentage_FRT_BC, aes(x = Condition, y = FRT_BCs))
+box_plot <- box_plot + geom_boxplot()+ labs(title = "Expression fraction rate iFlpscLineage",
+       x = "Condition",
+       y = "Expression Fraction per Cell")+
+  theme_classic()+ theme(title = element_text(size = 15, hjust = 0.5), axis.text.x.bottom = element_text(angle = 60, vjust = 1, hjust = 1, size = 11))
+
+box_plot
+
+```
+
+Surprisingly there are some cells in the GEA12_FULL_recomb that seem to have a huge rate of expression of FRT_BCs (over 60%)
+
+
+We can take a look at rates of expression among arrays
+
+```{r FRT_BCs per array 1, fig.height=5, fig.width=5,echo=FALSE}
+
+percentage_FRT_BC_Arrays <- GEA_Founders@meta.data[c("Condition", "A1_FRT_BCs", "A2_FRT_BCs", "A3_FRT_BCs")]
+
+percentage_FRT_BC_Arrays$Expression_FRT_BC_A1 <- "No"
+percentage_FRT_BC_Arrays$Expression_FRT_BC_A2 <- "No"
+percentage_FRT_BC_Arrays$Expression_FRT_BC_A3 <- "No"
+
+for (i in 1:nrow(percentage_FRT_BC_Arrays)){
+  if (percentage_FRT_BC_Arrays$A1_FRT_BCs[i] > 0){
+    percentage_FRT_BC_Arrays$Expression_FRT_BC_A1[i] <- "Yes"
+  }
+  if (percentage_FRT_BC_Arrays$A2_FRT_BCs[i] > 0){
+    percentage_FRT_BC_Arrays$Expression_FRT_BC_A2[i] <- "Yes"
+  }
+  if (percentage_FRT_BC_Arrays$A3_FRT_BCs[i] > 0){
+    percentage_FRT_BC_Arrays$Expression_FRT_BC_A3[i] <- "Yes"
+  }
+    
+}
+
+```
+
+
+```{r FRT_BCs per array barplots, fig.height=7, fig.width=15,echo=FALSE}
+
+# Array 1
+
+# Calculate the percentages within each category
+percentage_data_FRT_BC_Arrays <- percentage_FRT_BC_Arrays %>%
+  group_by(Condition) %>%
+  summarise(Yes = sum(Expression_FRT_BC_A1 == "Yes") / n(),
+            No = sum(Expression_FRT_BC_A1 == "No") / n())
+
+# Convert the data to long format for ggplot
+percentage_data_FRT_BC_long <- pivot_longer(percentage_data_FRT_BC_Arrays, cols = c(Yes, No), names_to = "Pct_Expression")
+
+# In % rates of expression
+
+bar_plot <- ggplot(data = percentage_data_FRT_BC_long, aes(x = Condition, y = value, fill = Pct_Expression))
+bar_plot <- bar_plot + geom_bar(stat = "identity")
+bar_plot_a <- bar_plot +
+  labs(title = "Array 1",
+       x = "Condition",
+       y = "% Cells") +
+  scale_fill_manual(values = c("Yes" = "green", "No" = "red")) +
+ theme_classic()+ theme(plot.title = element_text(size = 24, hjust = 0.5), axis.text.y = element_text(size = 18),
+                         axis.title.y = element_text(size = 22),
+                         axis.title.x = element_blank(),
+                         axis.text.x.bottom = element_text(angle = 60, vjust = 1, hjust = 1, size = 19),
+                        legend.position = "none")
+
+# Array 2
+
+percentage_data_FRT_BC_Arrays <- percentage_FRT_BC_Arrays %>%
+  group_by(Condition) %>%
+  summarise(Yes = sum(Expression_FRT_BC_A2 == "Yes") / n(),
+            No = sum(Expression_FRT_BC_A2 == "No") / n())
+
+# Convert the data to long format for ggplot
+percentage_data_FRT_BC_long <- pivot_longer(percentage_data_FRT_BC_Arrays, cols = c(Yes, No), names_to = "Pct_Expression")
+
+# In % rates of expression
+
+bar_plot <- ggplot(data = percentage_data_FRT_BC_long, aes(x = Condition, y = value, fill = Pct_Expression))
+bar_plot <- bar_plot + geom_bar(stat = "identity")
+bar_plot_b <- bar_plot +
+  labs(title = "Array 2",
+       x = "Condition",
+       y = "% Cells") +
+  scale_fill_manual(values = c("Yes" = "green", "No" = "red")) +
+  theme_classic()+ theme(plot.title = element_text(size = 24, hjust = 0.5), axis.text.y = element_text(size = 18),
+                         axis.title.y = element_text(size = 22),
+                         axis.title.x = element_blank(),
+                         axis.text.x.bottom = element_text(angle = 60, vjust = 1, hjust = 1, size = 19),
+                         legend.position = "none")
+  
+# Array 3
+
+percentage_data_FRT_BC_Arrays <- percentage_FRT_BC_Arrays %>%
+  group_by(Condition) %>%
+  summarise(Yes = sum(Expression_FRT_BC_A3 == "Yes") / n(),
+            No = sum(Expression_FRT_BC_A3 == "No") / n())
+
+# Convert the data to long format for ggplot
+percentage_data_FRT_BC_long <- pivot_longer(percentage_data_FRT_BC_Arrays, cols = c(Yes, No), names_to = "Pct_Expression")
+
+bar_plot <- ggplot(data = percentage_data_FRT_BC_long, aes(x = Condition, y = value, fill = Pct_Expression))
+bar_plot <- bar_plot + geom_bar(stat = "identity")
+bar_plot_c <- bar_plot +
+  labs(title = "Array 3",
+       x = "Condition",
+       y = "% Cells") +
+  scale_fill_manual(values = c("Yes" = "green", "No" = "red")) +
+  theme_classic()+ theme(plot.title = element_text(size = 24, hjust = 0.5), axis.text.y = element_text(size = 18),
+                         axis.title.y = element_text(size = 22),
+                         axis.title.x = element_blank(),
+                         axis.text.x.bottom = element_text(angle = 60, vjust = 1, hjust = 1, size = 19),
+                         legend.position = "none")
+
+# cairo_pdf("../Plots/QC/Barplot_Rates_of_expression_Arrays.pdf",  width = 15, height = 10, family = "Arial")
+bar_plot_a + bar_plot_b + bar_plot_c
+# dev.off()
+
+```
+
+Let's check the number and percentage of cells expressing more than one Array in the dataset
+
+
+```{r FRT_BCs per array, fig.height=5, fig.width=5,echo=FALSE}
+
+percentage_FRT_BC_Arrays <- percentage_FRT_BC_Arrays %>%
+  mutate(One_Array = ifelse((Expression_FRT_BC_A1 == "Yes") | 
+                            (Expression_FRT_BC_A3 == "Yes") |
+                            (Expression_FRT_BC_A2 == "Yes"), 1, 0))
+
+percentage_FRT_BC_Arrays <- percentage_FRT_BC_Arrays %>%
+  mutate(Two_Arrays = ifelse((Expression_FRT_BC_A1 == "Yes" & Expression_FRT_BC_A2 == "Yes") | 
+                            (Expression_FRT_BC_A1 == "Yes" & Expression_FRT_BC_A3 == "Yes") |
+                            (Expression_FRT_BC_A2 == "Yes" & Expression_FRT_BC_A3 == "Yes"), 1, 0))
+
+percentage_FRT_BC_Arrays <- percentage_FRT_BC_Arrays %>%
+  mutate(Three_Arrays = ifelse((Expression_FRT_BC_A1 == "Yes" & Expression_FRT_BC_A2 == "Yes" & Expression_FRT_BC_A3 == "Yes"), 1, 0))
+
+data_arrays_FRT_BC <- percentage_FRT_BC_Arrays[ ,c(1,8:10)]
+
+data_long <- data_arrays_FRT_BC %>%
+  gather(key = "Num_of_Arrays", value = "Array_number", -Condition)
+
+conditions = levels(data_arrays_FRT_BC$Condition)
+data = matrix(data = NA, 3, length(conditions), byrow = TRUE)
+# colnames(data) <- conditions
+# rownames(data) <- c("One Array", "Two Arrays", "Three Arrays")
+for (i in 1:length(conditions)){
+   values = c(sum(data_arrays_FRT_BC$One_Array[which(data_arrays_FRT_BC$Condition == conditions[i])]),
+            sum(data_arrays_FRT_BC$Two_Arrays[which(data_arrays_FRT_BC$Condition == conditions[i])]),
+             sum(data_arrays_FRT_BC$Three_Arrays[which(data_arrays_FRT_BC$Condition == conditions[i])]))
+   data[ ,i] <- values 
+}
+
+# cairo_pdf("../Plots/Barplot_Cells_with_iFlpscLineage_by_Condition.pdf", width = 5, height = 5)
+par(mar = c(8, 4, 4, 2) + 1)
+barplot(data, beside = T, names.arg = levels(data_arrays_FRT_BC$Condition),
+        col = c("olivedrab1", "olivedrab3", "olivedrab4"), main = "Expression by Arrays (Illumina)",
+        xlab = "", ylab = "Cell#", legend.text = c("One Array", "Two Arrays", "Three Arrays"), las = 2, cex.names = 0.7)
+# dev.off()
+
+
+# In percentages
+
+cell_numbers_cond <- table(data_arrays_FRT_BC$Condition)
+
+data_pct <- data
+
+for (i in 1:length(conditions)){
+  data_pct[ ,i] <- data[ ,i]*100/cell_numbers_cond[i]
+    
+}
+
+# cairo_pdf("../Plots/Barplot_Cells_with_iFlpscLineage_by_Condition_pct.pdf", width = 5, height = 5)
+par(mar = c(8, 4, 4, 2) + 1)
+barplot(data_pct, beside = T, names.arg = levels(data_arrays_FRT_BC$Condition),
+        col = c("olivedrab1", "olivedrab3", "olivedrab4"), main = "% Expression by Arrays (Illumina)",
+        xlab = "", ylab = "% Cells", legend.text = c("One Array", "Two Arrays", "Three Arrays"), las = 2, 
+        cex.names = 0.7)
+
+
+# dev.off()
+
+```
+
+For the GEA12 Founder the proportion of cells expressing iFlpscLineage Barcodes is huge, over 80% of them express at least one iFlpscLineage Array.
+
+## Looking at the Distribution of FRT-BCs throughout the populations
+
+
+### Looking at FRT-BC Mean Counts per cell
+
+```{r FRT_BCs per condition, fig.height=7, fig.width=15,echo=FALSE}
+
+Count.matrix <- GEA_Founders@assays$RNA@counts
+all.genes <- rownames(GEA_Founders)
+FRT_BCs <- all.genes[grep("*-BC*", all.genes)]
+
+x = rownames(Count.matrix) %in% FRT_BCs
+FRT.matrix <- Count.matrix[x,]
+
+matrix.FRT.list <- list()
+for (i in 1:length(conditions)){
+    FRT.matrix_cond <- FRT.matrix[, which(GEA_Founders@meta.data$Condition == conditions[i])]
+    matrix.FRT.list[[i]] <- FRT.matrix_cond 
+  
+}
+names(matrix.FRT.list) <- conditions
+
+
+matrix.FRT.list.1bc <- list()
+FRT_freq.list <- list()
+
+for (n in 1:length(conditions)){
+    FRT.matrix <- matrix.FRT.list[[n]]
+    
+    FRT_ge_1bc <- FRT.matrix[, colSums(FRT.matrix != 0 ) > 0 ]
+    matrix.FRT.list.1bc[[n]] <- FRT_ge_1bc
+    FRT_freq <- as.data.frame(matrix(data = NA,nrow = nrow(FRT_ge_1bc), ncol = 3))
+    colnames(FRT_freq) <- c("counts", "mean","sum")
+    rownames(FRT_freq) <- rownames(FRT_ge_1bc)
+    
+    for (i in 1:nrow(FRT_freq)){
+      FRT_freq$counts[i] <- sum(FRT_ge_1bc[i, ] > 0)
+      FRT_freq$mean[i] <-  mean(FRT_ge_1bc[i,FRT_ge_1bc[i, ] > 0])
+      FRT_freq$sum[i] <-  sum(FRT_ge_1bc[i,FRT_ge_1bc[i, ] > 0])
+      
+    }
+    FRT_freq <- FRT_freq %>%
+       mutate(mean = ifelse(is.na(mean), 0, mean))
+    FRT_freq.list[[n]] <- FRT_freq
+    
+  
+}
+
+
+
+names(matrix.FRT.list.1bc) <- conditions
+names(FRT_freq.list) <- conditions
+
+for(i in 1:length(conditions)){
+  par(mar=c(10,4,4,2)+2)
+  plot(x = 1:length(FRT_freq.list[[i]][["mean"]]), y = FRT_freq.list[[i]][["mean"]],main = paste0("Mean counts in ", conditions[i]),
+     axes = F , xlab = NA, 
+     ylim = c(0,13), 
+     pch=19,cex=1.5,ylab = "Mean expression",
+     col = c(rep(x = 1,10),rep(x = 2,10), rep(x = 3,10),rep(x = 4,7), rep(x = 5,8), rep(x = 6,7)))
+  axis(side = 1, at = 1:length(FRT_freq.list[[i]][["mean"]]),labels = rownames(FRT_freq), las=3 )
+  axis(2)
+  grid()
+  box()
+  legend("bottomright", legend = c("Array1", "Array1R", "Array2", "Array2R", "Array3", "Array3R"),
+       col = c(1:6), pch = 19, xpd = TRUE, cex = 0.8)
+}
+
+```
+
+### Looking at FRT-BC Counts
+
+And Now instead of Mean counts per cell lets look at the total counts in the dataset
+
+
+```{r FRT_BCs counts per condition, fig.height=7, fig.width=15,echo=FALSE}
+
+for(i in 1:length(conditions)){
+    par(mar=c(10,4,4,2)+2)
+  plot(x = 1:length(FRT_freq.list[[i]][["counts"]]), y = FRT_freq.list[[i]][["counts"]],main = paste0("Counts per BC in ", conditions[i]),
+     axes = F , xlab = NA, 
+     ylim = c(0,max(FRT_freq.list[[i]][["counts"]])), 
+     pch=19,cex=1.5,ylab = "Counts",
+     col = c(rep(x = 1,10),rep(x = 2,10), rep(x = 3,10),rep(x = 4,7), rep(x = 5,8), rep(x = 6,7)))
+  axis(side = 1, at = 1:length(FRT_freq.list[[i]][["counts"]]),labels = rownames(FRT_freq), las=3 )
+  axis(2)
+  grid()
+  box()
+  legend("topright", legend = c("Array1", "Array1R", "Array2", "Array2R", "Array3", "Array3R"),
+       col = c(1:6), pch = 19, xpd = TRUE, cex = 0.8)
+}
+
+```
+
+
+## Doing a ratio analysis between Fwd and Inverted BC segment
+
+```{r BC ratios per condition plot, fig.height=7, fig.width=15,echo=FALSE}
+
+FRT_BCs_dataset <- rownames(FRT_freq)
+
+FRT_BCs_missing <- c("A2-BC03R", "A2-BC04R", "A2-BC07R", "A3-BC07F", "A3-BC09F", "A3-BC04R", "A3-BC07R","A3-BC08R")
+
+# List of vectors
+vector_list <- list(FRT_BCs_dataset[1:32], FRT_BCs_missing[1:2], FRT_BCs_dataset[33:34], FRT_BCs_missing[3], FRT_BCs_dataset[35:43], FRT_BCs_missing[4], FRT_BCs_dataset[44], FRT_BCs_missing[5], FRT_BCs_dataset[45:48], FRT_BCs_missing[6], FRT_BCs_dataset[49:50], FRT_BCs_missing[7:8], FRT_BCs_dataset[51:52])  # Add more vectors to this list
+
+# Append all vectors together
+FRT_BCs_all <- do.call(c, vector_list)
+
+
+
+FRT_calc.list <- list()
+FRT_ratio <- data.frame(row.names = FRT_BCs_all)
+  
+for (i in 1:length(conditions)){
+
+  FRT_ratio$counts <- 0
+
+  FRT_ratio$counts[which(rownames(FRT_ratio) %in% rownames(FRT_freq.list[[i]]))] <- FRT_freq.list[[i]]$counts
+  FRT_calc <- data.frame(row.names = FRT_BCs_all[c(11:20, 31:40, 51:60)])
+  FRT_inv <- FRT_BCs_all[c(1:10, 21:30, 41:50)]
+
+  rownames(FRT_calc) <- paste0(rownames(FRT_calc), sep="/", FRT_inv)
+  FRT_calc$ratios <- FRT_ratio$counts[c(11:20, 31:40, 51:60)]/FRT_ratio$counts[c(1:10, 21:30, 41:50)]
+  
+  
+  FRT_calc.list[[i]] <- FRT_calc
+  
+}
+
+names(FRT_calc.list) <- conditions
+
+
+for(i in 1:length(conditions)){
+  par(mar=c(10,4,4,2)+2)
+  plot(x = 1:length(FRT_calc.list[[i]][["ratios"]]), y = FRT_calc.list[[i]][["ratios"]],main = paste0("Ratio Inv/Fwd per BC in ", conditions[i]),
+     axes = F , xlab = NA, 
+     # ylim = c(0,max(FRT_calc.list[[i]][["ratios"]])),
+     pch=19,cex=1.5,ylab = "Ratios",
+    col = c(rep(x = 1,10),rep(x = 2,10), rep(x = 3,10)))
+  axis(side = 1, at = 1:length(FRT_calc.list[[i]][["ratios"]]),labels = rownames(FRT_calc), las=3 )
+  axis(2)
+  grid()
+  box()
+  legend("topright", legend = c("Array1", "Array2","Array3"),
+       col = c(1:6), pch = 19, xpd = TRUE, cex = 0.8)
+
+}
+
+
+```
+The ratio analysis between Inv/Fwd BC segments indicate a good level of Iverted BCs present in the dataset
+
+
+## Looking at the Distribution of other transgenes in the populations
+
+
+```{r Transgenes per condition, fig.height=7, fig.width=15,echo=FALSE}
+
+DefaultAssay(GEA_Founders) <- "RNA"
+
+Count.matrix <- GEA_Founders@assays$RNA$counts
+Transgenes <- c("Tomato", "WPRE-sv40pA", "FlpE", "YFP", "Cre", "ERT2")
+
+# Sum of Fwd BCs vs Inv BCs
+
+x_Bcs_Fwd <- grep("A[123]-BC[0-1][0-9]F", rownames(Count.matrix))
+FRT_Fwd.matrix <- Count.matrix[x_Bcs_Fwd,]
+
+x_Bcs_Inv <- grep("A[123]-BC[0-1][0-9]R", rownames(Count.matrix))
+FRT_Inv.matrix <- Count.matrix[x_Bcs_Inv,]
+
+
+
+x = rownames(Count.matrix) %in% Transgenes
+FRT.matrix <- Count.matrix[x,]
+
+matrix.FRT.list <- list()
+for (i in 1:length(conditions)){
+    FRT.matrix_cond <- FRT.matrix[, which(GEA_Founders@meta.data$Condition == conditions[i])]
+    FRT_Fwd.matrix_cond <- FRT_Fwd.matrix[, which(GEA_Founders@meta.data$Condition == conditions[i])]
+    Fwd_BCs <- colSums(FRT_Fwd.matrix_cond)
+    FRT.matrix_cond <- rbind(FRT.matrix_cond, Fwd_BCs)
+
+    FRT_Inv.matrix_cond <- FRT_Inv.matrix[, which(GEA_Founders@meta.data$Condition == conditions[i])]
+    FRT_Inv.matrix_cond <- FRT_Inv.matrix[, which(GEA_Founders@meta.data$Condition == conditions[i])]
+    Inv_BCs <- colSums(FRT_Inv.matrix_cond)
+    FRT.matrix_cond <- rbind(FRT.matrix_cond, Inv_BCs)
+    
+    
+    matrix.FRT.list[[i]] <- FRT.matrix_cond 
+  
+}
+names(matrix.FRT.list) <- conditions
+
+
+matrix.FRT.list.1bc <- list()
+FRT_freq.list <- list()
+
+for (n in 1:length(conditions)){
+    FRT.matrix <- matrix.FRT.list[[n]]
+    
+    FRT_ge_1bc <- FRT.matrix[, colSums(FRT.matrix != 0 ) > 0 ]
+    matrix.FRT.list.1bc[[n]] <- FRT_ge_1bc
+    FRT_freq <- as.data.frame(matrix(data = NA,nrow = nrow(FRT_ge_1bc), ncol = 3))
+    colnames(FRT_freq) <- c("counts", "mean","sum")
+    rownames(FRT_freq) <- rownames(FRT_ge_1bc)
+    
+    for (i in 1:nrow(FRT_freq)){
+      FRT_freq$counts[i] <- sum(FRT_ge_1bc[i, ] > 0)
+      FRT_freq$mean[i] <-  mean(FRT_ge_1bc[i,FRT_ge_1bc[i, ] > 0])
+      FRT_freq$sum[i] <-  sum(FRT_ge_1bc[i,FRT_ge_1bc[i, ] > 0])
+      
+    }
+    FRT_freq <- FRT_freq %>%
+       mutate(mean = ifelse(is.na(mean), 0, mean))
+    FRT_freq.list[[n]] <- FRT_freq
+    
+  
+}
+
+
+
+names(matrix.FRT.list.1bc) <- conditions
+names(FRT_freq.list) <- conditions
+
+for(i in 1:length(conditions)){
+  par(mar=c(5,4,4,2)+2)
+  plot(x = 1:length(FRT_freq.list[[i]][["mean"]]), y = FRT_freq.list[[i]][["mean"]],main = paste0("Mean counts in ", conditions[i]),
+     axes = F , xlab = NA, 
+     # ylim = c(0,13), 
+     pch=19,cex=1.5,ylab = "Mean expression",
+     col = c(rep(x = 1,1),rep(x = 2,1), rep(x = 3,1),rep(x = 4,1), rep(x = 5,1), rep(x = 6,1), rep(x = 7,1), rep(x = 8,1)))
+  axis(side = 1, at = 1:length(FRT_freq.list[[i]][["mean"]]),labels = rownames(FRT_freq), las=3 )
+  axis(2)
+  grid()
+  box()
+}
+
+```
+
+
+
+### Looking at Transgene Counts
+
+And Now instead of Mean counts per cell lets look at the total counts in the dataset
+
+
+```{r Transgene counts per condition, fig.height=7, fig.width=15,echo=FALSE}
+
+for(i in 1:length(conditions)){
+  par(mar=c(5,4,4,2)+2)
+  plot(x = 1:length(FRT_freq.list[[i]][["counts"]]), y = FRT_freq.list[[i]][["counts"]],main = paste0("Counts per Transgene in ", conditions[i]),
+     axes = F , xlab = NA, 
+     ylim = c(0,max(FRT_freq.list[[i]][["counts"]])), 
+     pch=19,cex=1.5,ylab = "Counts",
+    col = c(rep(x = 1,1),rep(x = 2,1), rep(x = 3,1),rep(x = 4,1), rep(x = 5,1), rep(x = 6,1), rep(x = 7,1), rep(x = 8,1)))
+  axis(side = 1, at = 1:length(FRT_freq.list[[i]][["counts"]]),labels = rownames(FRT_freq), las=3 )
+  axis(2)
+  grid()
+  box()
+}
+
+```
+
+
+
+## Looking at the other Transgenes present in the dataset
+
+```{r Transgenes, fig.height=10, fig.width=24, echo=FALSE}
+
+transgenes <- c("FlpE", "Cre", "ERT2", "Tomato", "WPRE", "Bgh-pA", "Sv40-pA")
+
+transgenes <- as.data.frame(transgenes)
+
+#  Script
+
+myplots <- vector('list', nrow(transgenes))
+
+for (i in 1:nrow(transgenes)) {
+  p21 <- FeaturePlot(GEA_Founders, pt.size = 1, features = transgenes[i, 1], order = T, combine = F, slot = "data",
+  )
+  p21 <- lapply(X = p21, FUN = function(p) p + scale_colour_gradientn(colors = Bestholtz_palette))
+  p22 <- Reduce( `+`, p21 )+patchwork::plot_layout( ncol = 1 )
+  myplots[[i]] <- local({
+    i <- i
+    p22
+  })
+}
+
+p20 <- patchwork::wrap_plots(myplots, ncol = 4)
+p20
+
+
+
+```
+
+```{r Transgenes VlnPlot, fig.height=10, fig.width=24, echo=FALSE}
+
+transgenes <- c("FlpE", "Cre", "ERT2", "Tomato", "WPRE", "Bgh-pA", "Sv40-pA")
+
+p20 <- VlnPlot(GEA_Founders, features = transgenes, group.by = "Condition", ncol = 4)+theme(axis.title.x.bottom = element_blank())
+
+p20
+
+# saveRDS(GEA_Founders, "../rds/GEA_Founders.rds")
+
+GEA_metadata <- GEA_Founders@meta.data[19]
+
+write.csv(GEA_metadata, "../Tables/GEA_metadata_Condition_Final.csv", row.names = T)
+
+```
+
+# Conclusion
+
+GEA12 undergoing full recombination is by far the best of all conditions present. 
+Induction has worked by seeing the levels of expression of FlpE are only high in Fully recombined conditions
+There are issues in the correct alignment of Barcodes as in non recombined conditions appear levels of Reverse Barcodes. However, we can get rid of those issues by doing Nanopore sequencing, as Irepan's RFR_ONT pipeline can correctly address that only properly oriented full transcript iFlpscLineage Barcodes pass the Analysis. Here I can only select for the most frequent Barcode in each cell, but I have not done it as it can bias the counts, favoring cells with degenerate BCs even more, and overall analysis.
+
+# R session
+
+```{r session, ,echo=FALSE}
+
+sessionInfo()
+
+```

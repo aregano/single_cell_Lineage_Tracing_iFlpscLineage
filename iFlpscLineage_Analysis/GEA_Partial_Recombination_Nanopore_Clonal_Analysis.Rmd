@@ -378,11 +378,11 @@ barplot(c(dim(FRT_ge_1bc)[1], dim(FRT_ge_2bc)[1], dim(FRT_ge_3bc)[1]), names.arg
 ```
 
 
-```{r  iFlpscLineage per Arrays, fig.height= 10, fig.width=10, echo=FALSE}
+```{r  iFlpscLineage per Arrays, fig.height= 7, fig.width=7, echo=FALSE}
 
 GEA_Partial_recomb_clones <- readRDS("../rds/GEA_Founders_clones_processed_Nanopore.rds")
 
-conditions <- levels(GEA_Partial_recomb@meta.data$Condition)
+conditions <- levels(GEA_Partial_recomb_clones@meta.data$Condition)
 
 conditions
 
@@ -407,6 +407,7 @@ data_long <- data_arrays_FRT_BC %>%
 
 conditions = levels(data_arrays_FRT_BC$Condition)
 
+conditions
 
 # cairo_pdf("../Plots/Barplot_Cells_with_iFlpscLineage_Nanopore_by_Condition.pdf", width = 5, height = 5)
 par(mar = c(8, 4, 4, 2) + 1)
@@ -509,7 +510,7 @@ grid.draw(v)
 
 # Passing clonal output of RPFR_ONT to the scRANSeq dataset
 
-```{r scRNASeq, fig.height= 10, fig.width=10}
+```{r scRNASeq, fig.height= 20, fig.width=30}
 
 GEA_Partial_recomb$clone <- NA
 
@@ -534,7 +535,7 @@ do.call("grid.arrange", c(plots, ncol=3))
 # Looking at Clonal Diversity and Homoplasy among GEA Founders
 
 
-```{r Upset, fig.height= 10, fig.width=10}
+```{r Upset, fig.height= 10, fig.width=20}
 
 # Produce a Clonal Category
 Idents(GEA_Partial_recomb) <- "Condition"
@@ -605,7 +606,7 @@ dittoBarPlot(object = GEA_Partial_recomb_clones, var = "clone", group.by = "Cond
 
 ```
 
-```{r Venn Clones Founders, fig.height= 10, fig.width=10}
+```{r Venn Clones Founders, fig.height= 10, fig.width=15}
 
 all_clones <- table(GEA_Partial_recomb_clones$Condition)
 all_clones$clone <- "All"
@@ -645,7 +646,7 @@ for ( i in 1:sum(FRT_clones_sorted > 1)) {
 
 ```
 
-```{r Clones Venn, fig.height= 10, fig.width=10}
+```{r Clones Venn, fig.height= 60, fig.width=120}
 
 # Plot
 mul_factor1 <- 0.08
@@ -678,7 +679,7 @@ clones_pie
 
 ```
 
-```{r Venn Target FRT-BCs, fig.height= 10, fig.width=10}
+```{r Venn Target FRT-BCs, fig.height= 30, fig.width=15}
 
 # Plot
 
@@ -716,7 +717,7 @@ clones_pie
 ```
 
 
-```{r FeaturePlots Clones, fig.height= 15, fig.width=5}
+```{r FeaturePlots Clones, fig.height= 30, fig.width=15}
 
 coi <- rev(df$clone)
 plots_coi <- list()
@@ -790,7 +791,7 @@ barplot(x, names.arg = c("BCs from Array 1", "BCs from Array 2", "BCs from Array
 
 As this dataset is produced with constitutively expressed FlpO recombinase, I will take only the last two rows of my simulated pathmatrix and sum them row by row (this gives the best simulated BC frequency to compare with, as it adreeses inversions among each recombination step as well). With the Frequency values extracted I will match them with the iFLpscLineage BCs present in the dataset
 
-```{r BCs Freq pathmatrix, fig.height=10, fig.width=10, echo=FALSE}
+```{r BCs Freq pathmatrix, fig.height=10, fig.width=25, echo=FALSE}
 
 # Get minrec vector from the retrieved BCs in the pseudopathmatrix
 
@@ -1043,7 +1044,7 @@ df <- BCs_table_final
 ```
 
 
-```{r  BCs table for Irepan 2, fig.height=5, fig.width=10, echo=FALSE}
+```{r  BCs table for Irepan 2, fig.height=20, fig.width=10, echo=FALSE}
 
 read_excel_allsheets <- function(filename, tibble = FALSE) {
   # I prefer straight data.frames
@@ -1096,8 +1097,6 @@ for (i in 1:length(Conditions)){
   })
 }
 
-my_plots[[2]]
-
 p20 <- patchwork::wrap_plots(my_plots, ncol = 1)
 
 # cairo_pdf("../Plots/Dotplots_Clonesize_Frequencies_Threshold.pdf", height = 12, width = 8)
@@ -1108,7 +1107,7 @@ p20
 
 ## Unique Clonal BCs in dataset
 
-```{r  Plot unique BCs, fig.height=15, fig.width=10, echo=FALSE}
+```{r  Plot unique BCs, fig.height=20, fig.width=30, echo=FALSE}
 
 df_1 <- df[[1]]
 
@@ -1138,7 +1137,6 @@ for (i in 1:length(selected_clones)) {
                          cells.highlight = which(GEA_Partial_recomb$clone == selected_clones[i])) + NoLegend() + NoAxes() + ggtitle(unique_clones[i])
   }
 
-plots[[1]]
 
 plots[[length(selected_clones)+1]] <- DimPlot(GEA_Partial_recomb, group.by = "RNA_snn_res.0.3", label = T, label.box = T)+ NoLegend() + NoAxes()+theme(plot.title = element_blank())
 

@@ -175,23 +175,17 @@ p20 <- VlnPlot(GEA, features = modules[i, 1], group.by = "Condition", cols = clo
 }
 
 
-myplots[[1]]
-
 plegend <- VlnPlot(GEA, features = modules[i, 1], group.by = "Condition", cols = clone_palette, alpha = 0.25) 
-plegend
 legend <- get_legend(plegend+theme(legend.text = element_text(size = 22)))
 
 p25 <- patchwork::wrap_plots(myplots, ncol = 4)
 
-legend
 
 p26 <- plot_grid(p25, legend, ncol = 2, rel_widths = c(1, .4))
-p26
 x.axis <- ggdraw() + draw_label("Expression Level", fontface='bold', angle = 90, size = 24)
 
 p27 <- plot_grid(x.axis, p26, ncol = 2, rel_widths = c(.015, 1))
 
-p27
 
 
 # cairo_pdf("../Plots/QC/VlnPlot_Module_Scores_iFlpscLineage.pdf",  width = 20, height = 6, family = "Arial")
@@ -249,7 +243,7 @@ percentage_data_FRT_BC_long <- pivot_longer(percentage_data_FRT_BC, cols = c(Yes
 ## Looking at Expression rates of iFlpscLinage per cell
 
 
-```{r UMAPCondSeuratInt, fig.height= 10, fig.width=20, echo=FALSE}
+```{r UMAPCondSeuratInt, fig.height= 10, fig.width=10, echo=FALSE}
 
 bar_plot <- ggplot(data = percentage_FRT_BC, aes(x = Condition, fill = Expression_FRT_BC))
 
@@ -333,7 +327,7 @@ for (i in 1:nrow(percentage_FRT_BC_Arrays)){
 ```
 
 
-```{r FRT_BCs per array barplots, fig.height=7, fig.width=15,echo=FALSE}
+```{r FRT_BCs per array barplots, fig.height=10, fig.width=15,echo=FALSE}
 
 # Array 1
 

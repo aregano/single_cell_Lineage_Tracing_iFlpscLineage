@@ -1,0 +1,1053 @@
+---
+title: "GEA_Founders_Clonal_Analysis"
+author: "Alvaro Regano"
+date: "2023-09-15"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+
+library(openxlsx)
+library(dplyr)
+library(tidyverse)
+library(forcats)
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(ggplot2)
+library(dittoSeq)
+library(stringr)
+library(RColorBrewer)
+library(VennDiagram)
+library(tidyr)
+library(readxl)
+library(UpSetR)
+library(ComplexHeatmap)
+library(scatterpie)
+
+A1_BCs <- read.csv("../raw_data/RFRT_ONT/FRT_A1_Collapsed_BCs.csv")
+A2_BCs <- read.csv("../raw_data/RFRT_ONT/FRT_A2_Collapsed_BCs.csv")
+A3_BCs <- read.csv("../raw_data/RFRT_ONT/FRT_A3_Collapsed_BCs.csv")
+GEA_metadata <- read.csv("../Tables/GEA_metadata_Condition_Final.csv")
+
+
+
+```
+
+
+```{r repeated read entries, echo=FALSE}
+# Fix repeated reads entries
+
+A1_BCs <- A1_BCs %>% filter(!grepl("c", Corrected_10xBC))
+A2_BCs <- A2_BCs %>% filter(!grepl("c", Corrected_10xBC))
+A3_BCs <- A3_BCs %>% filter(!grepl("c", Corrected_10xBC))
+```
+
+## Objective
+
+We have the Nanopore RFRT_ONT data and we will correlate that data with the 10x data and see where do the BCs match
+
+
+## Set up the data
+
+```{r Comparing cell BCs, echo=FALSE}
+
+names(A1_BCs) <- c("BC10x", "A1_FRT_BC", "Count_A1")
+names(A2_BCs) <- c("BC10x", "A2_FRT_BC", "Count_A2")
+names(A3_BCs) <- c("BC10x", "A3_FRT_BC", "Count_A3")
+
+BCs_1 <- merge(A1_BCs, A2_BCs, all = T)
+
+BCs <- merge(BCs_1, A3_BCs, all = T)
+
+Cell_id <- BCs[,1]
+
+Cell_id <- unlist(lapply(Cell_id, function(x) paste0(x, "-1")))
+
+Match_cells <- GEA_metadata[GEA_metadata$X %in% Cell_id, ]
+
+```
+
+## Look into the proportions
+
+
+```{r figs, fig.height= 15, fig.width=20, echo=FALSE}
+
+Conditions_df <- data.frame(Match_cells$Condition)
+df <- as.data.frame(table(Conditions_df))
+
+df
+
+# cairo_pdf("../Plots/Barplot_Cells_with_iFlpscLineage_nanopore.pdf", height = 10, width = 15)
+ggplot(df, aes(x = Match_cells.Condition, y = Freq, fill = Match_cells.Condition)) +
+  geom_bar(stat="identity") +
+  labs(title = "iFlpscLineage Expression among Conditions", x = "Conditions", y = "Cell Counts", fill = "Condition")+
+  theme_classic()+
+  scale_fill_manual(values = c("#1F78B4", "#33A02C", "#E31A1C", "#FF7F00", "#6A3D9A"))+
+  theme(plot.title = element_text(size = 40, hjust = 0),axis.title.y = element_text(size = 34) , axis.title.x = element_blank(),  axis.text.x = element_blank(), axis.text.y = element_text(size = 28),legend.text = element_text(size = 28), legend.title = element_text(size = 32), legend.key.size = unit(1.2, "cm"))
+# dev.off()
+
+```
+And now we look at the total 10xBC cells present in the different datasets
+
+
+
+
+```{r figs 2, fig.height= 10, fig.width=10, echo=FALSE}
+
+GEA_Founders <- readRDS("../rds/GEA_Founders.rds")
+
+DefaultAssay(GEA_Founders) <- "RNA"
+Count.matrix <- GEA_Founders@assays$RNA@counts
+all.genes <- rownames(GEA_Founders)
+# get FRT BC genes 
+FRT_BCs <- tail(all.genes, n = 55) # ALL genes
+FRT_BCs <- FRT_BCs[1:52]
+#write.csv(file = "all_bcs.txt", x = BC_genes,quote =F,row.names = F,col.names = F)
+
+# subset the matrix to include only the shared genes
+x = rownames(Count.matrix) %in% FRT_BCs
+
+FRT.matrix <- Count.matrix[x,]
+dim(FRT.matrix)
+
+
+percentage_FRT_BC <- GEA_Founders@meta.data[c("Condition","FRT_BCs")]
+
+percentage_FRT_BC$Expression_FRT_BC <- "No"
+
+for (i in 1:nrow(percentage_FRT_BC)){
+  if (percentage_FRT_BC$FRT_BCs[i] > 0){
+    percentage_FRT_BC$Expression_FRT_BC[i] <- "Yes"
+  }
+    
+}
+
+GEA_Founders <- AddMetaData(GEA_Founders, percentage_FRT_BC)
+
+
+FRT_Cells_10x <- GEA_Founders@meta.data[GEA_Founders@meta.data$Expression_FRT_BC == "Yes", ]
+
+```
+
+```{r figs 3, fig.height= 10, fig.width=10, echo=FALSE}
+
+
+Cells_in_dataset <- c(nrow(GEA_metadata), nrow(BCs), nrow(Match_cells))
+
+x <- list(
+  x10x_Library = GEA_metadata$X,
+  iFlpscLineage_10x = rownames(FRT_Cells_10x),
+  Nanopore_Library = Cell_id
+)
+
+# Generate plot
+
+# cairo_pdf("../Plots/Venn_diagram_10x_match_Nanopore_All.pdf", height = 10, width = 9)
+v <- venn.diagram(x,
+                  fill = c("orange", "red", "blue"),
+                  alpha = c(0.5, 0.5, 0.5),
+                  cat.cex = 2, cex=3,
+                  filename=NULL,
+                  main = "Cell ID Match between 10x Library and Nanopore",
+                  sub = "3356 Cells in 10x Dataset",
+                  main.cex = 2.5,
+                  sub.cex = 2,
+                  # fontfamily = "Arial",
+                  cat.dist = -0.025)
+
+# have a look at the default plot
+grid.newpage()
+grid.draw(v)
+# dev.off()
+
+
+
+
+```
+
+
+Now let´s check the same in terms of Arrays
+
+```{r figs 4, fig.height= 10, fig.width=10, echo=FALSE}
+GEA_Founders <- PercentageFeatureSet(GEA_Founders, "*-BC*", col.name = "FRT_BCs")
+
+GEA_Founders <- PercentageFeatureSet(GEA_Founders, "^A1-BC", col.name = "A1_FRT_BCs")
+GEA_Founders <- PercentageFeatureSet(GEA_Founders, "^A2-BC", col.name = "A2_FRT_BCs")
+GEA_Founders <- PercentageFeatureSet(GEA_Founders, "^A3-BC", col.name = "A3_FRT_BCs")
+
+
+percentage_FRT_BC_Arrays <- GEA_Founders@meta.data[c("Condition", "A1_FRT_BCs", "A2_FRT_BCs", "A3_FRT_BCs")]
+
+percentage_FRT_BC_Arrays$Expression_FRT_BC_A1 <- "No"
+percentage_FRT_BC_Arrays$Expression_FRT_BC_A2 <- "No"
+percentage_FRT_BC_Arrays$Expression_FRT_BC_A3 <- "No"
+
+for (i in 1:nrow(percentage_FRT_BC_Arrays)){
+  if (percentage_FRT_BC_Arrays$A1_FRT_BCs[i] > 0){
+    percentage_FRT_BC_Arrays$Expression_FRT_BC_A1[i] <- "Yes"
+  }
+  if (percentage_FRT_BC_Arrays$A2_FRT_BCs[i] > 0){
+    percentage_FRT_BC_Arrays$Expression_FRT_BC_A2[i] <- "Yes"
+  }
+  if (percentage_FRT_BC_Arrays$A3_FRT_BCs[i] > 0){
+    percentage_FRT_BC_Arrays$Expression_FRT_BC_A3[i] <- "Yes"
+  }
+    
+}
+
+
+# Array 1
+
+x <- list(
+  x10x_Library = GEA_metadata$X,
+  iFlpscLineage_10x = rownames(GEA_Founders@meta.data[GEA_Founders@meta.data$A1_FRT_BCs > 0, ]),
+  Nanopore_Library = unlist(lapply(A1_BCs$BC10x, function(x) paste0(x, "-1")))
+)
+
+# Generate plot
+
+# cairo_pdf("../Plots/Venn_diagram_10x_match_Nanopore_A1.pdf", height = 10, width = 9)
+v <- venn.diagram(x,
+                  fill = c("orange", "red", "blue"),
+                  alpha = c(0.5, 0.5, 0.5),
+                  cat.cex = 2, cex=3,
+                  filename=NULL,
+                  main = "Cell ID Match between 10x Library and Nanopore",
+                  sub = "Array 1",
+                  main.cex = 2.5,
+                  sub.cex = 2,
+                  # fontfamily = "Arial",
+                  cat.dist = -0.025)
+
+# have a look at the default plot
+grid.newpage()
+grid.draw(v)
+# dev.off()
+
+
+# Array 2 (I do not have it yet)
+
+x <- list(
+  x10x_Library = GEA_metadata$X,
+  iFlpscLineage_10x = rownames(GEA_Founders@meta.data[GEA_Founders@meta.data$A2_FRT_BCs > 0, ]),
+  Nanopore_Library = unlist(lapply(A2_BCs$BC10x, function(x) paste0(x, "-1")))
+)
+
+# Generate plot
+
+# cairo_pdf("../Plots/Venn_diagram_10x_match_Nanopore_A2.pdf", height = 10, width = 9)
+v <- venn.diagram(x,
+                  fill = c("orange", "red", "blue"),
+                  alpha = c(0.5, 0.5, 0.5),
+                  cat.cex = 2, cex=3,
+                  filename=NULL,
+                  main = "Cell ID Match between 10x Library and Nanopore",
+                  sub = "Array 2",
+                  main.cex = 2.5,
+                  sub.cex = 2,
+                  # fontfamily = "Arial",
+                  cat.dist = -0.025)
+
+# have a look at the default plot
+grid.newpage()
+grid.draw(v)
+# dev.off()
+
+
+# Array 3
+
+x <- list(
+  x10x_Library = GEA_metadata$X,
+  iFlpscLineage_10x = rownames(GEA_Founders@meta.data[GEA_Founders@meta.data$A3_FRT_BCs > 0, ]),
+  Nanopore_Library = unlist(lapply(A3_BCs$BC10x, function(x) paste0(x, "-1")))
+)
+
+# Generate plot
+
+# cairo_pdf("../Plots/Venn_diagram_10x_match_Nanopore_A3.pdf", height = 10, width = 9)
+v <- venn.diagram(x,
+                  fill = c("orange", "red", "blue"),
+                  alpha = c(0.5, 0.5, 0.5),
+                  cat.cex = 2, cex=3,
+                  filename=NULL,
+                  main = "Cell ID Match between 10x Library and Nanopore",
+                  sub = "Array 3",
+                  main.cex = 2.5,
+                  sub.cex = 2,
+                  # fontfamily = "Arial",
+                  cat.dist = -0.025)
+
+# have a look at the default plot
+grid.newpage()
+grid.draw(v)
+# dev.off()
+
+
+```
+
+
+# Cell BC match between Nanopore and 10x Library
+
+```{r figs 5, fig.height= 10, fig.width=10, echo=FALSE}
+
+Raw_dataset <- readRDS("../rds/GEA_Founders_&_AJD_postnatal_raw.rds")
+
+Raw_dataset_metadata <- Raw_dataset@meta.data
+
+Match_cells <- Raw_dataset_metadata[rownames(Raw_dataset_metadata) %in% Cell_id, ]
+
+Cells_in_dataset <- c(nrow(Raw_dataset_metadata), nrow(BCs), nrow(Match_cells))
+
+# Add Array and iFlpscLineage categories
+
+DefaultAssay(Raw_dataset) <- "RNA"
+
+Raw_dataset <- PercentageFeatureSet(Raw_dataset, "*-BC*", col.name = "FRT_BCs")
+
+percentage_FRT_BC <- Raw_dataset@meta.data[c("FRT_BCs")]
+
+percentage_FRT_BC$Expression_FRT_BC <- "No"
+
+for (i in 1:nrow(percentage_FRT_BC)){
+  if (percentage_FRT_BC$FRT_BCs[i] > 0){
+    percentage_FRT_BC$Expression_FRT_BC[i] <- "Yes"
+  }
+    
+}
+
+Raw_dataset <- AddMetaData(Raw_dataset, percentage_FRT_BC)
+
+
+FRT_Cells_10x <- Raw_dataset@meta.data[Raw_dataset@meta.data$Expression_FRT_BC == "Yes", ]
+
+
+
+x <- list(
+  x10x_Library = rownames(Raw_dataset_metadata),
+  iFlpscLineage_10x = rownames(FRT_Cells_10x),
+  Nanopore_Library = Cell_id
+)
+
+# Generate plot
+
+# cairo_pdf("../Plots/Venn_diagram_10x_match_Nanopore_1.pdf", height = 10, width = 9)
+v <- venn.diagram(x,
+                  fill = c("orange", "red", "blue"),
+                  alpha = c(0.5, 0.5, 0.5),
+                  cat.cex = 2, cex=3,
+                  filename=NULL,
+                  main = "Cell ID Match between 10x Library and Nanopore",
+                  sub = "35746 Cells in 10x Dataset",
+                  main.cex = 2.5,
+                  sub.cex = 2,
+                  # fontfamily = "Arial",
+                  cat.dist = -0.025)
+
+# have a look at the default plot
+grid.newpage()
+grid.draw(v)
+# dev.off()
+
+
+
+
+```
+
+
+# Look into Nanopore Library Distribution and Complexity
+
+```{r Merging Nanopore and 10x, fig.height= 10, fig.width=10, echo=FALSE}
+
+ALL_10xBCs <- colnames(GEA_Founders)
+
+matrix_A1 <- xtabs(Count_A1 ~ BC10x + A1_FRT_BC, data = A1_BCs)
+matrix_A2 <- xtabs(Count_A2 ~ BC10x + A2_FRT_BC, data = A2_BCs)
+matrix_A3 <- xtabs(Count_A3 ~ BC10x + A3_FRT_BC, data = A3_BCs)
+
+n_rows <- length(Cell_id)
+
+row_names <- unique(c(rownames(matrix_A1), rownames(matrix_A2), rownames(matrix_A3)))
+
+col_names <- unique(c(colnames(matrix_A1), colnames(matrix_A2), colnames(matrix_A3)))
+
+n_cols <- sum(ncol(matrix_A1), ncol(matrix_A2), ncol(matrix_A3))
+
+FRT_Assembly <- matrix(0, nrow = n_rows, ncol = n_cols)
+
+for (i in 1:n_rows) {
+  row_name <- row_names[i]
+  for (j in 1:n_cols) {
+    col_name <- col_names[j]
+    
+    if (row_name %in% rownames(matrix_A1) && col_name %in% colnames(matrix_A1)) {
+      FRT_Assembly[i, j] <- matrix_A1[row_name, col_name]
+    }
+    
+    if (row_name %in% rownames(matrix_A2) && col_name %in% colnames(matrix_A2)) {
+      FRT_Assembly[i, j] <- matrix_A2[row_name, col_name]
+    }
+    
+    if (row_name %in% rownames(matrix_A3) && col_name %in% colnames(matrix_A3)) {
+      FRT_Assembly[i, j] <- matrix_A3[row_name, col_name]
+    }
+  }
+}
+
+
+rownames(FRT_Assembly) <- row_names
+colnames(FRT_Assembly) <- col_names
+rownames(FRT_Assembly) <- unlist(lapply(rownames(FRT_Assembly), function(x) paste0(x, "-1")))
+
+# Print the merged matrix
+# print(FRT_Assembly)
+
+cells_common <- intersect(ALL_10xBCs, Cell_id)
+FRT_Assembly_match <- FRT_Assembly[cells_common, ]
+
+FRT_clones <- data.frame(row.names = rownames(FRT_Assembly_match))
+FRT_clones$clone <- NA
+
+
+for (i in 1:length(FRT_clones$clone)){
+  FRT_clones$clone[i] <- paste0(names(which(FRT_Assembly_match[i, ] > 0)), collapse = "-")
+}
+
+FRT_clones_sorted <- sort(table(FRT_clones), decreasing = T)
+
+# cairo_pdf("../Plots/Clonal_Distribution_iFlpscLineage.pdf", height = 5, width = 10)
+plot(table(FRT_clones), main = "Clonal Distribution of iFlpscLineage GEA_Founders", ylab = "Clone Size (Cell#)" )
+# dev.off()
+
+
+
+
+```
+# Passing clonal output of RPFR_ONT to the scRANSeq dataset
+
+```{r scRNASeq, fig.height= 10, fig.width=10, echo=FALSE}
+
+GEA_Founders$clone <- NA
+
+for (i in 1:length(FRT_clones$clone)) {
+  x <- which(colnames(GEA_Founders) == rownames(FRT_clones)[i])
+  GEA_Founders$clone[x] <- FRT_clones$clone[i]
+}
+
+require(gridExtra)
+
+plots <- list()
+
+for (i in 1:12)
+  {
+  plots[[i]] <-  DimPlot(GEA_Founders,
+                         cells.highlight = which(GEA_Founders$clone == names(FRT_clones_sorted[i]))) + NoLegend() + NoAxes() + ggtitle(names(FRT_clones_sorted[i]))
+  }
+
+do.call("grid.arrange", c(plots, ncol=3))
+
+
+
+```
+# Looking at Clonal Diversity and Homoplasy among GEA Founders
+
+
+```{r Upset, fig.height= 10, fig.width=10, echo=FALSE}
+
+ggplotColours <- function(n = 8, h = c(0, 360) + 15){
+  if ((diff(h) %% 360) < 1) h[2] <- h[2] - 360/n
+  hcl(h = (seq(h[1], h[2], length = n)), c = 100, l = 65)
+}
+
+
+
+
+# Produce a Clonal Category
+Idents(GEA_Founders) <- "Condition"
+# GEA_Founders <- RenameIdents(GEA_Founders, "GEA12_FULL_recomb_iFlpscL" = "GEA12_FULL", "GEA12_NO_recomb_iFlpscL" = "GEA12_NO", "GEA18_FULL_recomb_iFlpscL" = "GEA18_FULL", "GEA3_NO_recomb_iFlpscL" = "GEA3_NO", "GEA27_NO_recomb_iFlpscL" = "GEA27_NO")
+
+GEA_Founders@meta.data$Condition <- GEA_Founders@active.ident
+
+# Merge Clonal iFlpscLineage ID in Conditions
+GEA_Founders_clones <- subset(GEA_Founders,cells = which(!is.na(GEA_Founders$clone)) )
+GEA_Founders_clones$Condition_clone <- paste(GEA_Founders_clones$Condition, GEA_Founders_clones$clone)
+
+FRT_Condition_clones_sorted <- sort(table(GEA_Founders_clones$Condition_clone), decreasing = T)
+
+# See how many iFlpLineages are clone specific
+
+GEA_Founders_FRT <- GEA_Founders_clones@meta.data
+
+conditions <- levels(GEA_Founders@meta.data$Condition)
+
+clones.GEA12_Full <- GEA_Founders_FRT$clone[which(GEA_Founders_FRT$Condition == conditions[1])]
+clones.GEA18_Full <- GEA_Founders_FRT$clone[which(GEA_Founders_FRT$Condition == conditions[2])]
+clones.GEA3_No <- GEA_Founders_FRT$clone[which(GEA_Founders_FRT$Condition == conditions[3])]
+clones.GEA27_No <- GEA_Founders_FRT$clone[which(GEA_Founders_FRT$Condition == conditions[4])]
+
+x <- list(
+  GEA3_R26Super = unique(clones.GEA12_Full),
+  GEA3_R26Std  = unique(clones.GEA18_Full),
+  GEA3_R26Std_Un  = unique(clones.GEA3_No),
+  GEA27_R26Std_Un = unique(clones.GEA27_No)
+)
+
+clone_palette_yfp_tom <- c(brewer.pal(name = "Paired", n = 10))
+clone_palette <- clone_palette_yfp_tom[c(2,4,6,8,10)]
+
+order = c("GEA3_R26Super", "GEA3_R26Std", "GEA3_R26Std_Un", "GEA27_R26Std_Un")
+m_1 = make_comb_mat(x)
+
+library(VennDetail)
+
+res <- venndetail(x)
+result <- result(res)
+results_index_unique <- which(result$Subset == "GEA3_R26Super" | result$Subset == "GEA3_R26Std" | result$Subset == " GEA3_R26Std_Un", result$Subset == "GEA27_R26Std_Un")
+unique_lineage <- result$Detail[results_index_unique]
+
+
+# Generate Upset plot
+# cairo_pdf("../Plots/Upset_plot_Clonal_Diversity_GEA_Founders.pdf", height = 5, width = 5)
+UpSet(m_1, 
+      column_title = "All present iFlpscLineages",
+      set_order = order,
+      top_annotation = HeatmapAnnotation(" " = anno_barplot(comb_size(m_1), height = unit(7, "cm"),
+               border = FALSE, add_numbers = T, numbers_rot = 0,
+               annotation_name_rot = 90,
+               axis = F,
+               gp = gpar(fill = c("green", "black", "black", "black")[comb_degree(m_1)]), 
+               axis_param = list(side = "left"))),
+      right_annotation = upset_right_annotation(m_1, bar_width = 0.5, gp = gpar(fill = clone_palette),
+      annotation_name_side = "top",
+      axis_param = list(side = "top"))
+      )
+# dev.off()
+
+```
+
+```{r Clone Barplot, fig.height= 10, fig.width=10, echo=FALSE}
+
+# cairo_pdf("../Plots/Barplot_Clonal_Diversity_GEA_Founders.pdf", height = 5, width = 3)
+dittoBarPlot(object = GEA_Founders_clones, var = "clone", group.by = "Condition", x.reorder = c(4,2,3,1)) + NoLegend()+theme(axis.title.x.bottom = element_blank(), title = element_blank(), axis.text.x.bottom = element_text(angle = 70))
+# dev.off()
+
+
+```
+
+## Looking at expression of iFlpscLineage Arrays within the cells
+
+```{r  iFlpscLineage Arrays, fig.height= 10, fig.width=10, echo=FALSE}
+
+
+## quantify cells with greater or equal (ge) than 1 FRT barcodes
+FRT_ge_1bc <- FRT_Assembly_match[rowSums( FRT_Assembly_match != 0 ) > 0 , ]
+
+## quantify cells with greater or equal (ge) than 2 FRT barcodes
+FRT_ge_2bc <-  FRT_Assembly_match[rowSums( FRT_Assembly_match != 0 ) > 1 ,  ]
+
+## quantify cells with greater or equal (ge) than 3 FRT barcodes
+FRT_ge_3bc <-  FRT_Assembly_match[rowSums( FRT_Assembly_match != 0 ) > 2 ,  ]
+
+# cairo_pdf("../Plots/Barplot_Array_Expression_iFlpscLineage.pdf", height = 6, width = 5)
+barplot(c(dim(FRT_ge_1bc)[1], dim(FRT_ge_2bc)[1], dim(FRT_ge_3bc)[1]), names.arg = c("1 Array", "2 Arrays", "3 Arrays"),
+        col = ggplotColours(n = 3)[2], main = "Array Expression of iFlpscLineage")
+# dev.off()
+
+```
+
+```{r  iFlpscLineage per Arrays, fig.height= 10, fig.width=10, echo=FALSE}
+
+conditions <- levels(GEA_Founders@meta.data$Condition)
+
+conditions
+
+data = matrix(data = NA, 3, length(conditions), byrow = TRUE)
+colnames(data) <- conditions
+rownames(data) <- c("One Array", "Two Arrays", "Three Arrays")
+FRT_ge_1bc <- FRT_ge_1bc %>% as_tibble(rownames = NA) 
+FRT_ge_2bc <- FRT_ge_2bc %>% as_tibble(rownames = NA) 
+FRT_ge_3bc <- FRT_ge_3bc %>% as_tibble(rownames = NA) 
+
+for (i in 1:length(conditions)){
+   values = c(NROW(FRT_ge_1bc[rownames(FRT_ge_1bc) %in% colnames(GEA_Founders_clones)[which(GEA_Founders_clones@meta.data$Condition == conditions[i])], ]),
+              NROW(FRT_ge_2bc[rownames(FRT_ge_2bc) %in% colnames(GEA_Founders_clones)[which(GEA_Founders_clones@meta.data$Condition == conditions[i])], ]),
+              NROW(FRT_ge_3bc[rownames(FRT_ge_3bc) %in% colnames(GEA_Founders_clones)[which(GEA_Founders_clones@meta.data$Condition == conditions[i])], ]))
+   data[ ,i] <- values 
+}
+
+cairo_pdf("../Plots/Barplot_Cells_with_iFlpscLineage_Nanopore_by_Condition.pdf", width = 5, height = 5)
+par(mar = c(8, 4, 4, 2) + 1)
+barplot(data, beside = T, names.arg = levels(data_arrays_FRT_BC$Condition),
+        col = c("olivedrab1", "olivedrab3", "olivedrab4"), main = "Expression by Arrays (Nanopore)",
+        xlab = "", ylab = "Cell#", legend.text = c("One Array", "Two Arrays", "Three Arrays"), las = 2, cex.names = 0.7)
+dev.off()
+
+
+# In percentages
+
+cell_numbers_cond <- table(data_arrays_FRT_BC$Condition)
+
+data_pct <- data
+
+for (i in 1:length(conditions)){
+  data_pct[ ,i] <- data[ ,i]*100/cell_numbers_cond[i]
+    
+}
+
+cairo_pdf("../Plots/Barplot_Cells_with_iFlpscLineage_Nanopore_by_Condition_pct.pdf", width = 5, height = 5)
+par(mar = c(8, 4, 4, 2) + 1)
+barplot(data_pct, beside = T, names.arg = levels(data_arrays_FRT_BC$Condition),
+        col = c("olivedrab1", "olivedrab3", "olivedrab4"), main = "% Expression by Arrays (Nanopore)",
+        xlab = "", ylab = "% Cells", legend.text = c("One Array", "Two Arrays", "Three Arrays"), las = 2, cex.names = 0.7)
+dev.off()
+
+```
+
+```{r Venn Clones Founders, fig.height= 10, fig.width=10, echo=FALSE}
+
+all_clones <- table(GEA_Founders_clones$Condition)
+all_clones$clone <- "All"
+
+all_clones <- as.data.frame(all_clones)
+all_clones$x <- 1
+all_clones$y <- 1
+Conditions <- colnames(all_clones)[1:4]
+
+
+p <- ggplot(all_clones, aes(x = x, y = y, label= clone))
+
+kk = p + geom_scatterpie(aes(x=x, y=y, group = clone, r= 1),
+    data = all_clones, cols = Conditions
+    #,color=NA
+    ) + 
+  scale_fill_manual(values=clone_palette)+theme_classic()+NoAxes()+ggtitle("Proportion of iFlpscLineages among GEA mice")+
+  theme(plot.title = element_text(size = 30, hjust = 0), legend.text = element_text(size = 20), legend.key.size = unit(1, "cm"), legend.title = element_blank())
+
+# cairo_pdf("../Plots/VennDiagram_iFlpscLineages_Lineages_GEA_Founders.pdf", height = 8, width = 12)
+kk
+# dev.off()
+
+```
+
+```{r Clones Freq, fig.height= 10, fig.width=10, echo=FALSE}
+
+for ( i in 1:sum(FRT_clones_sorted > 1)) {
+  myclone <- names(FRT_clones_sorted[i])
+ #print(myclone)
+  if (i == 1) {
+    clones_freq <- table(GEA_Founders_clones$Condition[GEA_Founders_clones$clone == myclone])
+    clones_freq$clone <- myclone
+    clones_freq <- as.data.frame(clones_freq)
+    }
+  x <- table(GEA_Founders_clones$Condition[GEA_Founders_clones$clone == myclone])
+  clones_freq[i,] <- c(x,myclone)
+  }
+
+```
+
+```{r Clones Venn, fig.height= 10, fig.width=10, echo=FALSE}
+
+# Plot
+mul_factor1 <- 0.08
+
+# clones_freq$clone
+
+df <- clones_freq[1:16,]
+for (i in 1:4){
+  df[, i] <- as.integer(df[, i])
+}
+
+
+df$yval  <- c(rep(10,4),rep(20,4),rep(30,4),rep(40,4))
+df$xval  <- c(rep(c(10,20,30,40),4))
+df$Count <- apply(df[,1:4], 1, sum)
+
+bg_p <- ggplot(df, aes(x = xval, y = yval, label= clone))
+
+clones_pie = bg_p + geom_scatterpie(aes(x=xval, y=yval, r= Count*mul_factor1),
+                                 data = df,
+                                 cols = Conditions,color=NA) +
+                scale_fill_manual(values=clone_palette) +
+                guides(fill=guide_legend(title="clone")) +
+                geom_scatterpie_legend(df$Count*0.08, x=50, y=10,
+                                       labeller=function(x) as.integer(x/(mul_factor1))) +
+                geom_text(nudge_y = 3, size=4) + ggtitle("Clones 1-16")
+
+
+clones_pie
+
+```
+
+```{r Venn Target FRT-BCs, fig.height= 10, fig.width=10, echo=FALSE}
+
+# Plot
+
+mul_factor1 <- 0.025
+
+# clones_freq$clone
+
+df <- clones_freq[c( 14,13, 9, 1),]
+for (i in 1:4){
+  df[, i] <- as.integer(df[, i])
+}
+df$yval  <- c(rep(10,1),rep(20,1),rep(30,1), rep(40,1))
+df$xval  <- c(rep(c(10),1))
+df$Count <- apply(df[,1:4], 1,sum)
+
+bg_p <- ggplot(df, aes(x = xval, y = yval, label= clone))
+
+clones_pie = bg_p + geom_scatterpie(aes(x=xval, y=yval, r= log(Count, 2)),
+                                 data = df,
+                                 cols = Conditions,color=NA, ) +
+                scale_fill_manual(values=clone_palette) +
+                guides(fill=guide_legend(title="Clone", title.theme = element_text(size = 20, face = "bold"))) +
+                geom_scatterpie_legend(log(df$Count, 1.8), x=25, y=10, 
+                                       labeller=function(x) as.integer(
+                                         2^x)) +
+                geom_text(nudge_y = 3, size=4) +
+                ggtitle("True Lineage vs Homoplasic iFlpscLineages") + theme_classic()+NoAxes()+
+                theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5), legend.position = c(0.7,0.7), legend.key.size = unit(1, 'cm'), legend.text = element_text(size = 18))
+
+
+# cairo_pdf("../Plots/VennDiagram_True_Lineage_v_Homoplasy_GEA.pdf", height = 15, width = 10)
+clones_pie
+# dev.off()
+
+```
+
+
+```{r FeaturePlots Clones, fig.height= 15, fig.width=5, echo=FALSE}
+
+coi <- rev(df$clone)
+plots_coi <- list()
+
+for (i in 1:length(coi))
+  {
+  plots_coi[[i]] <-  DimPlot(GEA_Founders,
+                         cells.highlight = which(GEA_Founders$clone == coi[i])) + NoLegend() + NoAxes() + ggtitle(coi[i])
+  }
+# cairo_pdf("../Plots/Featureplot_True_Lineage_v_Homoplasy_GEA.pdf", height = 15, width = 5)
+do.call("grid.arrange", c(plots_coi, ncol=1))
+# dev.off()
+```
+
+
+# Applying Pseudopathmatrix on GEA12 Fully Recombined cells
+
+```{r BCs comparison, fig.height=10, fig.width=10, echo=FALSE}
+
+# Get simulated BCs from simulated pathmatrix
+BCs_pseudopathmatrix <- read_delim("../../Pseudopathmatrix/simulated_pathmatrix_full_recombination.txt", delim = ',', col_names = F, col_types = "c")
+
+# Extract BC IDs from dataset
+GEA_12_full <- subset(GEA_Founders_clones, subset = Condition == "GEA3 R26-Super REcomb")
+BCs <- unique(GEA_12_full@meta.data$clone)
+BCs_single <- str_split(BCs, "-", simplify = T)
+
+BC_A1 <- unique(unlist(lapply(BCs_single, function(x) x[grepl("*A1_\\d*", x)])))
+BC_A2 <- unique(unlist(lapply(BCs_single, function(x) x[grepl("*A2_\\d*", x)])))
+BC_A3 <- unique(unlist(lapply(BCs_single, function(x) x[grepl("*A3_\\d*", x)])))
+
+BCs_dataset <- unique(c(gsub('FRT_A1_','',BC_A1), gsub('FRT_A2_','',BC_A2), gsub('FRT_A3_','',BC_A3)))
+
+# Extract all BCs one by one as counts
+GEA_12_full_FRT <- GEA_12_full@meta.data
+
+BCs_counts <- GEA_12_full_FRT$clone
+BCs_counts_single <- str_split(BCs_counts, "-", simplify = T)
+
+BCs_list <- c(unlist(lapply(BCs_counts_single, function(x) x[grepl("*A1_\\d*", x)])), unlist(lapply(BCs_counts_single, function(x) x[grepl("*A2_\\d*", x)])), unlist(lapply(BCs_counts_single, function(x) x[grepl("*A3_\\d*", x)])))
+
+BCs_counts.dataset <- gsub('FRT_A1_','', gsub('FRT_A2_','',gsub('FRT_A3_','',BCs_list)))
+
+# write.csv(file = "../Tables/all_bcs_counts.txt", x = BCs_counts.dataset,quote =F,row.names = F,col.names = F)
+
+# There is a BC that should not exist (00) I will take it out in this case
+
+BCs_dataset.df <- as.data.frame(BCs_dataset)
+
+# Compare if all these BCs in the dataset appear in my pseudopathmatrix
+
+length(BCs_pseudopathmatrix$X1[BCs_pseudopathmatrix$X1 %in% BCs_dataset.df$BCs_dataset])
+
+match <- BCs_pseudopathmatrix[BCs_pseudopathmatrix$X1 %in% BCs_dataset, ]
+
+nrow(match)
+
+# All found BCs in the dataset are registered in the pseudopathmatrix
+
+x<- c(length(BC_A1), length(BC_A2), length(BC_A3), nrow(BCs_dataset.df), nrow(match))
+
+# cairo_pdf("../Plots/Barplot_Match_BCs_with_pseudomatrix.pdf", height = 6, width = 4)
+par(mar=c(11,4,4,4))
+barplot(x, names.arg = c("BCs from Array 1", "BCs from Array 2", "BCs from Array 3", "Unique BCs", "Match with Pathmatrix"), col = c("red", "blue", "yellow", "purple", "green"), main = "Match dataset BCs with Pathmatrix", las=2, axisnames = T, cex.names = 1, ylab = "# iFlpscLineages")
+# dev.off()
+```
+
+##  Looking at the Frequencies of each recombined BC given by the full recombination pseudopathmatrix
+
+As this dataset is produced with constitutively expressed FlpO recombinase, I will take only the last two rows of my simulated pathmatrix and sum them row by row (this gives the best simulated BC frequency to compare with, as it adreeses inversions among each recombination step as well). With the Frequency values extracted I will match them with the iFLpscLineage BCs present in the dataset
+
+```{r BCs Freq pathmatrix, fig.height=10, fig.width=10, echo=FALSE}
+
+# Get full recombination pseudopathmatrix
+
+pseudopathmatrix <- read_delim("../../Pseudopathmatrix/simulated_pathmatrix_full_recombination_last_rows.txt", delim = ',', col_names = F, col_types = "c")
+
+
+dataset_freq <- pseudopathmatrix[pseudopathmatrix$X1 %in% BCs_dataset, ]
+
+# To get the frequencies of the obtained BCs per Pgen
+# pseudopathmatrix <- read_delim("../Tables/simulated_pathmatrix_Pgen_9_recombination.txt", delim = ',', col_names = F, col_types = "c")
+# dataset_freq$Pgen11 <- pseudopathmatrix$X2[pseudopathmatrix$X1 %in% BCs_dataset]
+# write_excel_csv2(dataset_freq, "../Tables/ESCells_BCs_freq_Pgens.xlsx")
+
+# hist(pseudopathmatrix$X2)
+
+# In order to evaluate our BCs we need to consider the differences in probability from 2 Array v 1 Array BCs. To do that we will multiply the frequencies of our pseudopathmatrix in this manner: P(A1_BCx)*P(A3_BCy) = P(A1_BCx-A3_BCy). We will bind this new dataframe with the standard one which is only 1 array specific. 
+
+# In the case of cells with 3 FRT_BCs we will multiply frequencies the following way: P(A1_BCx)*P(A2_BCy)*P(A3_BCz)* = P(A1_BCx-A2_BCy-A3_BCz)
+
+sum(dataset_freq$X2)
+
+# For 2 Arrays
+
+dataset_freq_2Array <- full_join(dataset_freq, dataset_freq, by = character())
+dataset_freq_2Array$BC <- paste(dataset_freq_2Array$X1.x, dataset_freq_2Array$X1.y, sep = "-")
+dataset_freq_2Array$Prob <- dataset_freq_2Array$X2.x*dataset_freq_2Array$X2.y
+dataset_freq_2Array <- dataset_freq_2Array[, 5:6]
+
+
+# For 3 Arrays
+
+dataset_freq_3Array <- full_join(dataset_freq, dataset_freq, by = character())
+dataset_freq_3Array <- full_join(dataset_freq_3Array, dataset_freq, by = character())
+dataset_freq_3Array$BC <- paste(dataset_freq_3Array$X1.x, dataset_freq_3Array$X1.y, dataset_freq_3Array$X1, sep = "-")
+dataset_freq_3Array$Prob <- dataset_freq_3Array$X2.x*dataset_freq_3Array$X2.y*dataset_freq_3Array$X2
+dataset_freq_3Array <- dataset_freq_3Array[, 7:8]
+
+BCs_code <- gsub("FRT_A\\d{1}_", "", BCs)
+
+names(dataset_freq) <- c("BC", "Prob")
+
+dataset_freq <- as.data.frame(dataset_freq)
+dataset_freq_2Array <- as.data.frame(dataset_freq_2Array)
+dataset_freq_3Array <- as.data.frame(dataset_freq_3Array)
+
+dataset_freq_full <- rbind(dataset_freq, dataset_freq_2Array, dataset_freq_3Array)
+
+# Now since we are joining three different probabilities, one considering a single Array, another 2, and another 3, we should half each probability to accommodate the other
+
+# dataset_freq_full$Freq <- dataset_freq_full$Freq/3
+
+Freq_BCs_in_dataset <- dataset_freq_full[dataset_freq_full$BC %in% BCs_code, ]
+
+# cairo_pdf("../Plots/Histogram_Frequencies_with_pseudomatrix.pdf", height = 10, width = 6)
+par(mfrow = c(2,1))
+hist(Freq_BCs_in_dataset$Prob, breaks = 25, main = "Probability of BCs in dataset", xlab = "Probability", ylab = "# iFlpscLineages")
+hist(Freq_BCs_in_dataset$Prob, xlim = c(0,0.01), breaks = 100, main = "Probability of Low Freq BCs in dataset", xlab = "Probability", ylab = "# iFlpscLineages")
+# dev.off()
+
+# Looking at clonesize along frequencies
+
+Freq_BCs_in_dataset$Clonesize <- "1"
+
+BCs_clonesize_2 <- names(which(table(GEA_12_full_FRT$clone) >= 2 & table(GEA_12_full_FRT$clone) <= 4))
+BCs_clonesize_2 <- gsub("FRT_A\\d{1}_", "", BCs_clonesize_2)
+Freq_BCs_in_dataset$Clonesize[Freq_BCs_in_dataset$BC %in% BCs_clonesize_2] <- "2-4"
+
+BCs_clonesize_3 <- names(which(table(GEA_12_full_FRT$clone) > 4 & table(GEA_12_full_FRT$clone) <= 10))
+BCs_clonesize_3 <- gsub("FRT_A\\d{1}_", "", BCs_clonesize_3)
+Freq_BCs_in_dataset$Clonesize[Freq_BCs_in_dataset$BC %in% BCs_clonesize_3] <- "5-10"
+
+BCs_clonesize_4 <- names(which(table(GEA_12_full_FRT$clone) > 10))
+BCs_clonesize_4 <- gsub("FRT_A\\d{1}_", "", BCs_clonesize_4)
+Freq_BCs_in_dataset$Clonesize[Freq_BCs_in_dataset$BC %in% BCs_clonesize_4] <- "11+"
+
+
+table_clones <- table(GEA_12_full_FRT$clone)
+names(table_clones) <- gsub("FRT_A\\d{1}_", "", names(table_clones))
+table_clones
+
+table_clones_df <- as.data.frame(table_clones)
+
+Freq_BCs_in_dataset$n_Clones[table_clones_df$Freq[which(table_clones_df$Var1 %in% Freq_BCs_in_dataset$BC)]]
+
+
+p1 <- ggplot(Freq_BCs_in_dataset, aes(x = Prob, fill = Clonesize)) + 
+  geom_histogram(bins = 30)+scale_fill_manual(values = c("1" = "#353436", "2-4" = "brown", "5-10" = "orange",  "11+" = "yellow"))+
+  theme_classic()+
+  labs(y = "# iFlpscLineages", x = "Probability")+
+  scale_y_continuous(expand = expansion(mult = 0, add = 0))+
+  ggtitle("Probability of BCs and Clonesize")+
+  theme(plot.title = element_text(hjust = 0.5, size = 16))
+
+p2 <- ggplot(Freq_BCs_in_dataset, aes(x = Prob, fill = Clonesize)) + 
+  geom_histogram(bins = 30)+scale_fill_manual(values = c("1" = "#353436", "2-4" = "brown", "5-10" = "orange",  "11+" = "yellow"))+
+  labs(y = "# iFlpscLineages", x = "Probability")+
+  xlim(0, 0.01)+
+  theme_classic()+
+  scale_y_continuous(expand = expansion(mult = 0, add = 0))+
+  ggtitle("Probability of BCs and Clonesize")+
+  theme(plot.title = element_text(hjust = 0.5, size = 16))
+
+# cairo_pdf("../Plots/Histogram_Frequencies_with_pseudomatrix_clonesize.pdf", height = 6, width = 8)
+p1/p2
+# dev.off()
+
+Freq_BCs_in_dataset$Degenerate <- "No"
+
+for (i in 1:nrow(Freq_BCs_in_dataset)){
+  if (nchar(Freq_BCs_in_dataset$BC[i]) == 1) {
+    Freq_BCs_in_dataset$Degenerate[i] <- "Yes"
+  }
+}
+
+```
+
+```{r BCs Freq pathmatrix degenerate, fig.height=5, fig.width=10, echo=FALSE}
+
+# cairo_pdf("../Plots/Histogram_Frequencies_with_pseudomatrix_degenerate.pdf", height = 3, width = 8)
+ggplot(Freq_BCs_in_dataset, aes(x = Prob, fill = Degenerate)) + 
+geom_histogram(bins = 30)+scale_fill_manual(values = c("No" = "#353436", "Yes" = "red"))+
+  labs(y = "# iFlpscLineages", x = "Probability")+
+  # xlim(0, 0.01)+
+  theme_classic()+
+  scale_y_continuous(expand = expansion(mult = 0, add = 0))+
+  ggtitle("Probability of Degenerated BCs ")+
+  theme(plot.title = element_text(hjust = 0.5, size = 16))
+# dev.off()
+
+
+saveRDS(GEA_Founders_clones, "../rds/GEA_Founders_clones_processed_Nanopore.rds")
+```
+
+```{r Get all BCs in a string for calculating gel bands, fig.height=5, fig.width=10, echo=FALSE}
+GEA_Founders <- readRDS("../rds/GEA_Founders_clones_processed_Nanopore.rds")
+
+
+GEA_clones <- GEA_Founders@meta.data$clone[which(GEA_Founders@meta.data$Condition == "GEA12_FULL_recomb_iFlpscL")]
+BCs_single <- str_split(GEA_clones, "-", simplify = T)
+BCs_all <- gsub("FRT_A\\d{1}_", '', BCs_single)
+
+BCs_all <- BCs_all[BCs_all != ""]
+
+# write(BCs_all, "../Tables/all_bcs_counts_GEA12.txt")
+
+```
+
+## Producing a Proper BC table with Probabilities, clonesize and arrays expressed
+
+```{r  BCs table for Irepan, fig.height=5, fig.width=10, echo=FALSE}
+
+BCs_table_final <- as.data.frame(table(clones.GEA12_Full))
+
+BCs_table_final$BC <- gsub("FRT_A\\d{1}_", '', BCs_table_final$clones.GEA12_Full)
+
+BCs_table_final <- merge(BCs_table_final, dataset_freq_full, by = "BC", all.x = TRUE)
+
+BCs_counts_GEA12_single <- str_split(BCs_table_final$clones.GEA12_Full, "-", simplify = T)
+
+BCs_table_final$Array1 <- NA
+
+BCs_table_final$Array2 <- NA
+
+BCs_table_final$Array3 <- NA
+
+# Array1
+
+matching_rows <- grepl("^FRT_A1", BCs_counts_GEA12_single[,1])
+
+BCs_table_final$Array1[which(matching_rows)] <- BCs_counts_GEA12_single[which(matching_rows), 1]
+BCs_table_final$Array1 <- gsub("FRT_A\\d{1}_", '', BCs_table_final$Array1)
+
+
+# Array2
+
+matching_rows <- grepl("^FRT_A2", BCs_counts_GEA12_single[,1])
+matching_rows_2 <- grepl("^FRT_A2", BCs_counts_GEA12_single[,2])
+
+BCs_table_final$Array2[which(matching_rows)] <- BCs_counts_GEA12_single[which(matching_rows), 1]
+BCs_table_final$Array2[which(matching_rows_2)] <- BCs_counts_GEA12_single[which(matching_rows_2), 2]
+
+BCs_table_final$Array2 <- gsub("FRT_A\\d{1}_", '', BCs_table_final$Array2)
+
+# Array3 
+
+matching_rows <- grepl("^FRT_A3", BCs_counts_GEA12_single[,1])
+matching_rows_2 <- grepl("^FRT_A3", BCs_counts_GEA12_single[,2])
+matching_rows_3 <- grepl("^FRT_A3", BCs_counts_GEA12_single[,3])
+
+BCs_table_final$Array3[which(matching_rows)] <- BCs_counts_GEA12_single[which(matching_rows), 1]
+BCs_table_final$Array3[which(matching_rows_2)] <- BCs_counts_GEA12_single[which(matching_rows_2), 2]
+BCs_table_final$Array3[which(matching_rows_3)] <- BCs_counts_GEA12_single[which(matching_rows_3), 3]
+
+BCs_table_final$Array3 <- gsub("FRT_A\\d{1}_", '', BCs_table_final$Array3)
+
+
+# write.csv(BCs_table_final, "../Tables/BCs_tables_clones_Probabilities.csv", row.names = F)
+
+df <- BCs_table_final
+
+df <- read.csv(file = "../Tables/BCs_tables_clones_Probabilities.csv")
+
+
+BC <- str_split(string = df$BC,  pattern = "-")
+df$Narrays <- lapply(BC, length)
+df$Narrays <- unlist(df$Narrays)
+df$Narrays <- as.factor(df$Narrays)
+
+colnames(df)[3] <- "Clonesize"
+
+# cairo_pdf("../Plots/Dotplots_Clonesize_Frequencies_Threshold.pdf", height = 4, width = 8)
+ggplot(data = df, aes(x=Prob, y=Clonesize, size=Clonesize, col = Narrays)) + 
+  geom_point(alpha = 0.75) +
+  scale_x_continuous(name = "Probability", trans = "log10") +
+  scale_y_continuous(name = "Clonesize", trans = "log2") +
+  scale_size(range = c(3,9 ), breaks = c(1,5,10,20,40)) +
+  labs(col = "Number of Arrays")+
+  guides(col = guide_legend(override.aes = list(size = 10)))+
+  theme_classic()+theme(panel.background = element_blank(), axis.title = element_text(size = 18), axis.text = element_text(size = 14),
+                        legend.text = element_text(size = 16), legend.title = element_text(size = 16))+
+  scale_color_manual(values = alpha(c("lightsalmon", "thistle", "deepskyblue"), 0.7))+
+  geom_vline(xintercept = 0.001, linetype = 2)+
+  geom_hline(yintercept = 1.5, linetype = 2)
+# dev.off()
+
+```
+
+## Unique Clonal BCs in dataset
+
+```{r  Plot unique BCs, fig.height=15, fig.width=10, echo=FALSE}
+
+df_cutout <- df[df$Prob < 0.001, ]
+df_cutout <- df_cutout[df_cutout$Clonesize > 1, ]
+
+unique_clones <- df_cutout$clones.GEA12_Full
+
+require(gridExtra)
+
+plots <- list()
+
+for (i in 1:length(unique_clones))
+  {
+  plots[[i]] <-  DimPlot(GEA_Founders, sizes.highlight = 1.7, pt.size = 1.2,
+                         cells.highlight = which(GEA_Founders$clone == unique_clones[i])) + NoLegend() + NoAxes() + ggtitle(unique_clones[i])
+  }
+
+plots[[length(unique_clones)+1]] <- DimPlot(GEA_Founders, group.by = "RNA_snn_res.0.3", label = T, label.box = T)+ NoLegend() + NoAxes()+theme(plot.title = element_blank())
+
+cairo_pdf("../Plots/Featureplot_True_Lineage_GEA_ppt.pdf", width = 12, height = 12)
+do.call("grid.arrange", c(plots, ncol=3))
+dev.off()
+
+jpeg("../Plots/Featureplot_True_Lineage_GEA_ppt.jpeg", width = 12, height = 12, units = "in", res = 400)
+do.call("grid.arrange", c(plots, ncol=3))
+dev.off()
+
+```
+
+
