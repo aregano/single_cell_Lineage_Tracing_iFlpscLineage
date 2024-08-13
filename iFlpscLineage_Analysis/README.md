@@ -16,8 +16,6 @@ In this model the recombinase activity is regulated. This regulation of recombin
 
 **Pros:** Barcode variability that ensures unique clones are retrieved
 
-**Cons:** Harder detection of Barcodes in each cell
-
-          Harder retrieval of full length transcript barcodes
+**Cons:** Harder detection of Barcodes in each cell and harder retrieval of full length transcript barcodes
 
 **Note:** As only Partial recombination barcodes give enough variability that should be the only viable approach when doing a biological assay that aims at producing a dataset that couples scLT and transcriptomics data through scRNAseq.
