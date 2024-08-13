@@ -15,4 +15,4 @@ iFlpscLineage uses DNA barcodes that, through recombinase activity, are able to 
 
 In order to retrieve both the transcriptomical and scLT profile of each sequenced cell, we used the 10x Chromium platform for performing scRNAseq followed by two independent amplification steps. Illumina sequencing would give information about the cells transcriptome and we used Nanopore sequencing for full lenght transcript sequencing of the iFlpscLineage barcodes.
 
-![iFlpscLineage_protocol(/images/iFlpscLineage_Protocol.png)
+![iFlpscLineage_protocol](/images/iFlpscLineage_Protocol.png)
