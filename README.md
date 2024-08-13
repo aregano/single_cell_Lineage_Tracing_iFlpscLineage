@@ -7,7 +7,7 @@ single cell Lineage Tracing seeks to follow the division history of a cell in or
 
 ## iFlpscLineage
 
-iFlpscLineage uses DNA barcodes that, through recombinase activity, are able to produce unique Barcode configurations that can be traced through the cells progeny to the moment where recombination ocurred. Under recombinase activity, the fixed DNA sequence undergoes either excision or deletion events. What sets each event to occur is mediated by the orientation of the recombination sites. If they face the same direction, the flanked DNA sequence will be excised. Alternatively, if they face opposite directions, inversion of the flanked sequence occurs.iFlpscLineage is comprised of three separate barcode arrays, arranged in tandem within the Rosa 26 locus. Independence of each array is ensured by using different recombination sites in each array, thereby impeding inter-array recombinations.
+iFlpscLineage uses DNA barcodes that, through FlpO recombinase activity, are able to produce unique Barcode configurations that can be traced through the cells progeny to the moment where recombination ocurred. Under recombinase activity, the fixed DNA sequence undergoes either excision or deletion events. What sets each event to occur is mediated by the orientation of the recombination sites. If they face the same direction, the flanked DNA sequence will be excised. Alternatively, if they face opposite directions, inversion of the flanked sequence occurs.iFlpscLineage is comprised of three separate barcode arrays, arranged in tandem within the Rosa 26 locus. Independence of each array is ensured by using different recombination sites in each array, thereby impeding inter-array recombinations.
 
 ![iFlpscLineage](/images/iFlpscLineage.png)
 
