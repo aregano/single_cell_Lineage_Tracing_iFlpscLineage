@@ -4,11 +4,11 @@ Once iFlpscLineage was validated through the Constitutive recombination model, w
 
 ## Experimental design
 
-![Experimental design](../../Experimental_design_Partial.png)
+![Experimental design](../../images/Experimental_design_Partial.png)
 
 Once again the experiments where carried in two different days. 
 
 ## Barcoding Strategy
 
 
-![Barcoding](../../Partial.png)
+![Barcoding](../../images/Partial.png)
