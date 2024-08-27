@@ -1,5 +1,5 @@
 *.html linguist-detectable=false
 
-# *.* linguist-language=R
+*.* linguist-language=R
 
 # linguist-detectable=true
